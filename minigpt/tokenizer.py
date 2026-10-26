@@ -6,8 +6,9 @@ class CharTokenizer:
     """Un id par caractère distinct du texte, dans l'ordre trié."""
 
     def __init__(self, chars):
-        raise NotImplementedError("séance M1 : à compléter")
-
+        self.chars = sorted(set(chars))
+        self.stoi = {c : i for i, c in enumerate(self.chars)}
+        self.itos = {i : c for i, c in enumerate(self.chars)}
     @classmethod
     def from_text(cls, text):
         return cls(set(text))
@@ -17,10 +18,10 @@ class CharTokenizer:
         return len(self.chars)
 
     def encode(self, s: str) -> list[int]:
-        raise NotImplementedError("séance M1 : à compléter")
+        return [ self.stoi[c] for c in s]
 
     def decode(self, ids) -> str:
-        raise NotImplementedError("séance M1 : à compléter")
+        return "".join(self.itos[i] for i in ids)
 
     def save(self, path):
         with open(path, "w", encoding="utf-8") as f:
@@ -34,12 +35,23 @@ class CharTokenizer:
 
 def get_stats(ids, counts=None):
     """Compte les paires adjacentes : [1, 2, 3, 1, 2] → {(1, 2): 2, (2, 3): 1, (3, 1): 1}."""
-    raise NotImplementedError("séance M1 : à compléter")
+    counts = {} if counts is None else counts
+    for i,j in zip(ids, ids[1:]):
+        counts[(i,j)] = 1 + counts.get((i,j), 0) 
+    return counts
 
 
 def merge(ids, pair, idx):
     """Remplace chaque occurrence de pair (de gauche à droite, sans chevauchement) par idx."""
-    raise NotImplementedError("séance M1 : à compléter")
+    out, i = [], 0
+    while i < len(ids):
+        if i+1 < len(ids) and ids[i] == pair[0] and ids[i+1] == pair[1]:
+            out.append(idx)
+            i += 2
+        else:
+            out.append(ids[i])
+            i += 1
+    return out
 
 
 class BPETokenizer:
@@ -54,13 +66,31 @@ class BPETokenizer:
         return len(self.vocab)
 
     def train(self, text, vocab_size):
-        raise NotImplementedError("séance M1 : à compléter")
+        assert vocab_size >= 256
+        ids = list(text.encode("utf-8"))
+        for i in range(vocab_size - 256):
+            stats = get_stats(ids)
+            if not stats:
+                break
+            pair = max(stats, key=stats.get)               # à égalité : la première rencontrée
+            idx = 256 + i
+            ids = merge(ids, pair, idx)
+            self.merges[pair] = idx
+            self.vocab[idx] = self.vocab[pair[0]] + self.vocab[pair[1]]
+        return self
 
     def encode(self, text) -> list[int]:
-        raise NotImplementedError("séance M1 : à compléter")
+        ids = list(text.encode("utf-8"))
+        while len(ids) > 1:
+            stats = get_stats(ids)
+            pair = min(stats, key=lambda p: self.merges.get(p, float("inf")))
+            if pair not in self.merges:
+                break
+            ids = merge(ids, pair, self.merges[pair])
+        return ids
 
     def decode(self, ids) -> str:
-        raise NotImplementedError("séance M1 : à compléter")
+        return b"".join(self.vocab[idx] for idx in ids).decode("utf-8", errors="replace")
 
     def save(self, path):
         with open(path, "w", encoding="utf-8") as f:
