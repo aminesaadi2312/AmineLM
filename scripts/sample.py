@@ -1,7 +1,7 @@
-"""Séance M6 · Génération depuis un checkpoint.
+"""Generate text from a checkpoint.
 
     python scripts/sample.py --prompt "ROMEO:" --n 400 --temperature 0.8 --top_k 50
-    python scripts/sample.py --no_cache          # pour comparer la vitesse
+    python scripts/sample.py --no_cache          # to compare speed without the KV cache
 """
 import argparse, os, sys, time
 import torch
@@ -32,7 +32,14 @@ def main():
     model.to(device).eval()
     tok = CharTokenizer.load(os.path.join(ck["data_dir"], "tokenizer.json"))
     torch.manual_seed(args.seed)
-    raise NotImplementedError("séance M6 : à compléter")
+
+    idx = torch.tensor([tok.encode(args.prompt)], dtype=torch.long, device=device)
+    t0 = time.time()
+    out = model.generate(idx, args.n, temperature=args.temperature, top_k=args.top_k, top_p=args.top_p,
+                         use_cache=not args.no_cache)
+    dt = time.time() - t0
+    print(tok.decode(out[0].tolist()))
+    print(f"\n[{args.n} tokens in {dt:.2f}s · {args.n / dt:,.0f} tok/s · KV cache {'off' if args.no_cache else 'on'}]")
 
 
 if __name__ == "__main__":

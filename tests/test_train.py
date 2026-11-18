@@ -1,4 +1,4 @@
-"""Séance M5 · pytest tests/test_train.py"""
+"""pytest tests/test_train.py"""
 import math
 import numpy as np
 import torch
@@ -18,7 +18,7 @@ def test_get_lr():
     assert math.isclose(get_lr(100, 10, 100, 1e-3, 1e-4), 1e-4)
 
 
-def test_groupes_de_l_optimiseur():
+def test_optimizer_groups():
     m = GPT(CFG)
     opt = m.configure_optimizer(0.1, 1e-3)
     assert isinstance(opt, torch.optim.AdamW)
@@ -37,13 +37,13 @@ def test_estimate_loss_modes():
     out = estimate_loss(m, {"train": data, "val": data}, 3, 16, 4)
     h.remove()
     assert set(out) == {"train", "val"}
-    assert all(not t and not g for t, g in seen), "évaluation en eval() et sans gradient"
-    assert m.training, "le modèle doit revenir en mode train"
+    assert all(not t and not g for t, g in seen), "evaluation in eval() mode and without gradients"
+    assert m.training, "the model must go back to train mode"
 
 
-def test_l_entrainement_fait_baisser_la_perte():
+def test_training_lowers_the_loss():
     torch.manual_seed(0)
-    data = (np.arange(20000) % 12).astype(np.uint16)          # séquence périodique : facile à apprendre
+    data = (np.arange(20000) % 12).astype(np.uint16)          # periodic sequence: easy to learn
     m = GPT(GPTConfig(vocab_size=12, block_size=16, n_layer=2, n_head=4, n_kv_head=2, n_embd=32))
     opt = m.configure_optimizer(0.1, 3e-3)
     first = None

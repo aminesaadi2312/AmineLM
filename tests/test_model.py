@@ -1,4 +1,4 @@
-"""Séance M4 · pytest tests/test_model.py"""
+"""pytest tests/test_model.py"""
 import math
 import torch
 import torch.nn.functional as F
@@ -17,7 +17,7 @@ def test_swiglu():
     assert CFG.ffn_dim == 192
 
 
-def test_bloc_pre_norm():
+def test_pre_norm_block():
     torch.manual_seed(0)
     b = Block(CFG).eval()
     cos, sin = precompute_rope(CFG.head_dim, 32)
@@ -26,17 +26,17 @@ def test_bloc_pre_norm():
     assert torch.allclose(b(x, cos, sin), h + b.feed_forward(b.ffn_norm(h)), atol=1e-5)
 
 
-def test_forward_formes_et_loss_none():
+def test_forward_shapes_and_no_loss():
     m = GPT(CFG)
     logits, loss = m(torch.randint(0, 50, (3, 20)))
     assert logits.shape == (3, 20, 50) and loss is None
 
 
-def test_perte_initiale_proche_de_ln_V():
+def test_initial_loss_close_to_ln_V():
     torch.manual_seed(0)
     m = GPT(CFG)
     _, loss = m(torch.randint(0, 50, (8, 32)), torch.randint(0, 50, (8, 32)))
-    assert abs(loss.item() - math.log(50)) < 0.3, f"perte initiale {loss.item():.2f}, attendu ≈ {math.log(50):.2f} (init std 0,02 ?)"
+    assert abs(loss.item() - math.log(50)) < 0.3, f"initial loss {loss.item():.2f}, expected ~{math.log(50):.2f} (init std 0.02?)"
 
 
 def test_causal():
@@ -47,7 +47,7 @@ def test_causal():
     assert torch.allclose(m(idx)[0][:, :9], m(idx2)[0][:, :9], atol=1e-5)
 
 
-def test_weight_tying_et_parametres():
+def test_weight_tying_and_param_count():
     m = GPT(CFG)
     assert m.lm_head.weight is m.tok_embeddings.weight
     D, F_, L, V, kv = 64, 192, 2, 50, 2 * 16
@@ -55,7 +55,7 @@ def test_weight_tying_et_parametres():
     assert m.num_params() == L * per_layer + V * D + D
 
 
-def test_surapprend_un_batch():
+def test_overfits_one_batch():
     torch.manual_seed(0)
     m = GPT(CFG)
     idx = torch.randint(0, 50, (4, 17))
@@ -65,4 +65,4 @@ def test_surapprend_un_batch():
         opt.zero_grad()
         loss.backward()
         opt.step()
-    assert loss.item() < 1.0, f"le modèle n'apprend pas un batch fixe ({loss.item():.2f})"
+    assert loss.item() < 1.0, f"the model cannot fit a fixed batch ({loss.item():.2f})"

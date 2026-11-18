@@ -1,7 +1,7 @@
-"""Séance M2 · Prépare les données : texte → ids (tokenizer caractère) → data/<nom>/{train,val}.bin (uint16).
+"""Prepare the data: text -> ids (character tokenizer) -> data/<name>/{train,val}.bin (uint16).
 
-    python scripts/prepare_shakespeare.py                      # Tiny Shakespeare (1,1 M caractères)
-    python scripts/prepare_shakespeare.py --input mon_texte.txt --name molière
+    python scripts/prepare_shakespeare.py                      # Tiny Shakespeare (1.1M characters)
+    python scripts/prepare_shakespeare.py --input my_text.txt --name my_corpus
 """
 import argparse, json, os, sys, urllib.request
 import numpy as np
@@ -14,7 +14,7 @@ URL = "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshake
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--input", default=None, help="fichier texte UTF-8 (sinon Tiny Shakespeare)")
+    p.add_argument("--input", default=None, help="UTF-8 text file (default: Tiny Shakespeare)")
     p.add_argument("--name", default="shakespeare")
     p.add_argument("--val_frac", type=float, default=0.1)
     args = p.parse_args()
@@ -25,18 +25,18 @@ def main():
     else:
         raw = os.path.join(out, "input.txt")
         if not os.path.exists(raw):
-            print("téléchargement de Tiny Shakespeare…")
+            print("downloading Tiny Shakespeare...")
             urllib.request.urlretrieve(URL, raw)
         text = open(raw, encoding="utf-8").read()
     tok = CharTokenizer.from_text(text)
-    ids = np.array(tok.encode(text), dtype=np.uint16)        # uint16 : jusqu'à 65 535 tokens
-    n = int((1 - args.val_frac) * len(ids))
+    ids = np.array(tok.encode(text), dtype=np.uint16)        # uint16: fine for vocabularies up to 65,535 tokens
+    n = int((1 - args.val_frac) * len(ids))        # the last 10% is validation: never seen in training
     ids[:n].tofile(os.path.join(out, "train.bin"))
     ids[n:].tofile(os.path.join(out, "val.bin"))
     tok.save(os.path.join(out, "tokenizer.json"))
     with open(os.path.join(out, "meta.json"), "w") as f:
         json.dump({"vocab_size": tok.vocab_size, "tokenizer": "char", "n_train": n, "n_val": len(ids) - n}, f)
-    print(f"{len(text):,} caractères · vocabulaire {tok.vocab_size} · train {n:,} · val {len(ids) - n:,} tokens → {out}/")
+    print(f"{len(text):,} characters · vocab {tok.vocab_size} · train {n:,} · val {len(ids) - n:,} tokens -> {out}/")
 
 
 if __name__ == "__main__":

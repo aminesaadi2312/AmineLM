@@ -1,14 +1,15 @@
-"""Séance M1 · Tokenizers : caractère (utilisé pour l'entraînement) et BPE au niveau octet (comme Tekken)."""
+"""Tokenizers: a character-level one (used for training) and a byte-level BPE (the idea behind Tekken, Mistral's tokenizer)."""
 import json
 
 
 class CharTokenizer:
-    """Un id par caractère distinct du texte, dans l'ordre trié."""
+    """One id per distinct character, in sorted order."""
 
     def __init__(self, chars):
         self.chars = sorted(set(chars))
-        self.stoi = {c : i for i, c in enumerate(self.chars)}
-        self.itos = {i : c for i, c in enumerate(self.chars)}
+        self.stoi = {c: i for i, c in enumerate(self.chars)}
+        self.itos = {i: c for i, c in enumerate(self.chars)}
+
     @classmethod
     def from_text(cls, text):
         return cls(set(text))
@@ -18,7 +19,7 @@ class CharTokenizer:
         return len(self.chars)
 
     def encode(self, s: str) -> list[int]:
-        return [ self.stoi[c] for c in s]
+        return [self.stoi[c] for c in s]
 
     def decode(self, ids) -> str:
         return "".join(self.itos[i] for i in ids)
@@ -34,18 +35,18 @@ class CharTokenizer:
 
 
 def get_stats(ids, counts=None):
-    """Compte les paires adjacentes : [1, 2, 3, 1, 2] → {(1, 2): 2, (2, 3): 1, (3, 1): 1}."""
+    """Count adjacent pairs: [1, 2, 3, 1, 2] -> {(1, 2): 2, (2, 3): 1, (3, 1): 1}."""
     counts = {} if counts is None else counts
-    for i,j in zip(ids, ids[1:]):
-        counts[(i,j)] = 1 + counts.get((i,j), 0) 
+    for pair in zip(ids, ids[1:]):
+        counts[pair] = counts.get(pair, 0) + 1
     return counts
 
 
 def merge(ids, pair, idx):
-    """Remplace chaque occurrence de pair (de gauche à droite, sans chevauchement) par idx."""
+    """Replace every occurrence of pair (left to right, no overlap) with the new id idx."""
     out, i = [], 0
     while i < len(ids):
-        if i+1 < len(ids) and ids[i] == pair[0] and ids[i+1] == pair[1]:
+        if i + 1 < len(ids) and ids[i] == pair[0] and ids[i + 1] == pair[1]:
             out.append(idx)
             i += 2
         else:
@@ -55,11 +56,11 @@ def merge(ids, pair, idx):
 
 
 class BPETokenizer:
-    """BPE au niveau octet : 256 octets de base, puis vocab_size − 256 fusions."""
+    """Byte-level BPE: the 256 possible bytes, then vocab_size - 256 learned merges."""
 
     def __init__(self):
-        self.merges = {}                                   # (a, b) → nouvel id, dans l'ordre de création
-        self.vocab = {i: bytes([i]) for i in range(256)}   # id → octets
+        self.merges = {}                                   # (a, b) -> new id, in creation order
+        self.vocab = {i: bytes([i]) for i in range(256)}   # id -> bytes
 
     @property
     def vocab_size(self) -> int:
@@ -72,7 +73,7 @@ class BPETokenizer:
             stats = get_stats(ids)
             if not stats:
                 break
-            pair = max(stats, key=stats.get)               # à égalité : la première rencontrée
+            pair = max(stats, key=stats.get)               # most frequent pair (first one seen on ties)
             idx = 256 + i
             ids = merge(ids, pair, idx)
             self.merges[pair] = idx
@@ -80,6 +81,7 @@ class BPETokenizer:
         return self
 
     def encode(self, text) -> list[int]:
+        """Start from bytes and apply merges in the order they were learned (earliest first)."""
         ids = list(text.encode("utf-8"))
         while len(ids) > 1:
             stats = get_stats(ids)

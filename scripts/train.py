@@ -1,6 +1,6 @@
-"""Séance M5 · Entraînement.
+"""Train the model.
 
-    python scripts/train.py --preset tiny --max_iters 2000            # CPU ou Mac : quelques minutes
+    python scripts/train.py --preset tiny --max_iters 2000            # CPU or Mac: a few minutes
     python scripts/train.py --preset small --max_iters 5000 --flash   # GPU
 """
 import argparse, contextlib, csv, json, math, os, sys, time
@@ -39,11 +39,11 @@ def main():
     p.add_argument("--warmup", type=int, default=100)
     p.add_argument("--weight_decay", type=float, default=0.1)
     p.add_argument("--grad_clip", type=float, default=1.0)
-    p.add_argument("--n_kv_head", type=int, default=None, help="ablation GQA : 1 (MQA) … n_head (MHA)")
-    p.add_argument("--no_tie", action="store_true", help="ablation : sans weight tying")
-    p.add_argument("--flash", action="store_true", help="F.scaled_dot_product_attention (séance M7)")
-    p.add_argument("--no_rope", action="store_true", help="ablation : sans RoPE")
-    p.add_argument("--post_norm", action="store_true", help="ablation : blocs post-norm")
+    p.add_argument("--n_kv_head", type=int, default=None, help="GQA ablation: 1 (MQA) ... n_head (MHA)")
+    p.add_argument("--no_tie", action="store_true", help="ablation: no weight tying")
+    p.add_argument("--flash", action="store_true", help="use F.scaled_dot_product_attention")
+    p.add_argument("--no_rope", action="store_true", help="ablation: no RoPE")
+    p.add_argument("--post_norm", action="store_true", help="ablation: post-norm blocks")
     p.add_argument("--compile", action="store_true")
     p.add_argument("--seed", type=int, default=1337)
     args = p.parse_args()
@@ -63,7 +63,7 @@ def main():
     data = {s: load_split(os.path.join(args.data_dir, f"{s}.bin")) for s in ("train", "val")}
 
     raw = GPT(cfg).to(device)
-    print(f"device {device} · {raw.num_params() / 1e6:.2f} M paramètres · config {cfg}")
+    print(f"device {device} · {raw.num_params() / 1e6:.2f}M parameters · {cfg}")
     opt = raw.configure_optimizer(args.weight_decay, args.lr, device_type=device_type)
     bf16 = device_type == "cuda" and torch.cuda.is_bf16_supported()
     amp = torch.autocast(device_type="cuda", dtype=torch.bfloat16) if bf16 else contextlib.nullcontext()
@@ -76,8 +76,40 @@ def main():
     writer.writerow(["step", "train", "val", "lr", "tokens_per_s"])
     best, tokens, t0 = math.inf, 0, time.time()
 
-    raise NotImplementedError("séance M5 : à compléter")
-    print(f"meilleure perte de validation : {best:.3f} · checkpoint : {ckpt_path}")
+    for step in range(args.max_iters + 1):
+        lr = get_lr(step, args.warmup, args.max_iters, args.lr, args.min_lr)
+        for g in opt.param_groups:
+            g["lr"] = lr
+
+        # evaluate, log and keep the best checkpoint
+        if step % args.eval_interval == 0 or step == args.max_iters:
+            with amp:
+                losses = estimate_loss(model, data, args.eval_iters, cfg.block_size, args.batch_size, device)
+            tps = tokens / (time.time() - t0) if step > 0 else 0.0
+            print(f"step {step:5d} · train {losses['train']:.3f} · val {losses['val']:.3f} · lr {lr:.2e} · {tps:,.0f} tok/s")
+            writer.writerow([step, f"{losses['train']:.4f}", f"{losses['val']:.4f}", f"{lr:.6f}", f"{tps:.0f}"])
+            log.flush()
+            if losses["val"] < best:
+                best = losses["val"]
+                torch.save({"model": raw.state_dict(), "config": cfg.to_dict(), "step": step, "val": best,
+                            "data_dir": args.data_dir}, ckpt_path)
+        if step == args.max_iters:
+            break
+
+        # one optimizer step, possibly over several micro-batches (gradient accumulation)
+        for _ in range(args.grad_accum):
+            x, y = get_batch(data["train"], cfg.block_size, args.batch_size, device)
+            with amp:
+                _, loss = model(x, y)
+            (loss / args.grad_accum).backward()
+            tokens += x.numel()
+        if args.grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(raw.parameters(), args.grad_clip)
+        opt.step()
+        opt.zero_grad(set_to_none=True)
+
+    log.close()
+    print(f"best val loss: {best:.3f} · checkpoint: {ckpt_path}")
 
 
 if __name__ == "__main__":
